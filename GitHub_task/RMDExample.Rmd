@@ -1,0 +1,62 @@
+---
+title: "Bioinf1"
+output: html_document
+date: "2024-09-06"
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+library(tidyverse)
+library(psych)
+library(readr)
+library(tibble)
+library(flextable)
+```
+
+## R Markdown
+
+This is an R Markdown document. Markdown is a simple formatting syntax for authoring HTML, PDF, and MS Word documents. For more details on using R Markdown see <http://rmarkdown.rstudio.com>.
+
+When you click the **Knit** button a document will be generated that includes both content as well as the output of any embedded R code chunks within the document. You can embed an R code chunk like this:
+
+```{r}
+
+data<-read_tsv("data_tsv.tsv")
+data %>% select(`Группа`, function(x) !is.factor(x))
+data %>% select(`Пол`, `Группа`, `Базофилы_E1`)
+data %>% select(where(is.numeric) & where(function(x) sd(x, na.rm = TRUE) > 1))
+
+data %>% select(function(x) any(str_detect(x, "Жен")))
+data %>% select(function(x) sd(x, na.rm = TRUE) > 1)
+data %>% select(`Группа`, (function(x) is.factor(x)) | where(function(x) is.numeric(x)))
+
+
+data %>% select(where(function(x) sd(x, na.rm = TRUE) > 1))
+x %>% View()
+data %>% mutate(across(!contains("E1"), function(x) str_c(x, " + некая строка")))
+
+
+
+
+data %>% mutate(across(function(x) any(near(x, 0.5, tol = 0.1)), function(x) x + 1000))
+
+data %>% mutate(across(!contains("E1") & !c(`Группа`, `Возраст`) & !where(is.factor), function(x) x ^ 2), across(contains("E2"), function(x) x * 100))
+
+data %>% mutate(across(!contains("E1") & !c(`Группа`, `Возраст`), function(x) x ^ 2))
+
+x %>% glimpse()
+
+data %>% flextable()%>%
+theme_alafoli()
+
+```
+
+## Including Plots
+
+You can also embed plots, for example:
+
+```{r pressure, echo=FALSE}
+plot(pressure)
+```
+
+Note that the `echo = FALSE` parameter was added to the code chunk to prevent printing of the R code that generated the plot.
