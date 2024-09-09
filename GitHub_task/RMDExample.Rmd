@@ -1,5 +1,5 @@
 ---
-title: "Bioinf1"
+title: "Bioinf2"
 output: html_document
 date: "2024-09-06"
 ---
