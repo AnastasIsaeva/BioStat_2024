@@ -1,0 +1,497 @@
+---
+title: "BI_retraining_basic_datavis_2024_2"
+author: "A.S.Isaeva"
+date: "2024-09-19"
+output:
+  html_document: default
+  pdf_document: default
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE, message = FALSE, warning = FALSE, error = FALSE, fig.width=16, fig.height=10)
+
+library(tidyverse)
+library(ggpubr)
+library(dplyr)
+```
+
+## Загрузка данных
+
+```{r}
+hogwarts <- read_csv("C:/Users/User/Downloads/dayavis2_BI_2024/data/hogwarts_2024.csv")
+hogwarts |> head()
+```
+
+### Проверка структуры данных
+
+```{r}
+hogwarts |> glimpse()
+
+# Changing some variables type to factors
+hogwarts <- hogwarts |> mutate(
+  across(c(house, course, sex, wandCore, bloodStatus), ~ as.factor(.x))
+)
+```
+
+### Поиск пропущенных значений
+
+```{r}
+sum(is.na(hogwarts))
+```
+
+### Сводка по данным
+
+```{r}
+hogwarts |> 
+  summary()
+```
+
+### Пересоздание theme_custom
+
+```{r}
+theme_custom <- theme(
+    panel.background = element_rect(fill = "white"),
+    plot.title = element_text(size = 30, hjust = 0.5),
+    plot.subtitle = element_text(size = 25, hjust = 0.5),
+    strip.text = element_text(size = 20),
+    axis.text = element_text(size = 20),
+    axis.title = element_text(size = 25),
+    legend.title = element_text(size = 25),
+    legend.text = element_text(size = 20)
+  )
+
+# А еще мы создаем функцию для стандартной ошибки среднего
+se <- function(x){
+  sd(x, na.rm=TRUE)/sqrt(length(x))
+}
+```
+
+## Диаграммы рассеяния (скаттерплоты)
+
+### 1. Постройте скаттерплот, визуализирующий связь между суммарным баллом студента за год и оценкой за экзамен по травологии. Добавьте на график линию тренда. Удалите доверительную область и сделайте линию прямой. Подумайте, как избежать того, чтобы записать одни и те же координаты x и y дважды. Проинтерпретируйте график. (1 б.)
+
+***Интерпретация графика:** Линия тренда и распределение данных свидетельствует о том, у студентов с более высоким общегодовым баллом высокие оценки по травологии. Можно предположить также прямую ассоциацию между этими признаками, но для подтверждения требудется статистическая обработка результатов.*
+
+```{r}
+hogwarts |> 
+  ggplot(aes(x = `result`, 
+                 y = `Herbology exam`))+
+  geom_point(size=5, shape=19, alpha=.3, stroke = 1, 
+             position=position_jitter(width=1, height=1))+
+  geom_smooth(se = FALSE,
+              method = "lm")+
+  theme_custom
+
+
+```
+
+![](images/ggplot2shapey.png){width="1200"}
+
+2.  **Отобразите на одной иллюстрации скаттерплоты, аналогичные тому, что вы делали на первом задании, для экзаменов по травологии, магловедению, прорицаниям и зельеварению. На иллюстрации также должна присутствовать линия тренда с характеристиками, аналогичными тем, что были в пункте 1. Раскрасьте точки в разные цвета, в соответствии с факультетами. Используйте стандартные цвета факультетов (как в лекционных rmd). Проинтерпретируйте полученный результат. (1 б). Если вы создадите иллюстрацию из этого пункта, используя только пакеты семейства tidyverse, и не привлекая дополнительные средства, вы получите дополнительные 0.5 б.**
+
+    ***Интерпретация графика:** По полученным графикам можно предположить, что баллы за экзамены по травологии, магловедению и прорицаниям растут прямо пропорционально общегодовым результатам. Однако требуется дополнительная статистическая проверка гипотезы.*
+
+    *Касательно зельеварения, можно сказать, что большинство студентов имеют общегодовые результаты более -100 и при этом, по всей видимости ассоциации с оценкой по зельеварению нет. Отдельно можно выделить любителей зельеварения низкой общегодовой оценкой.*
+
+P.S. Интереснее добавить в ggplot(aes()) color=course. Так у нас и в geom_smooth будет несколько линий тренда в зависимости от факультета. Я оставила одну в соответствии с заданием.
+
+```{r}
+scatterHerbology<-hogwarts |> 
+  mutate(course = as.factor(course)) |> 
+  ggplot(aes(x = `result`, 
+                 y = `Herbology exam`))+
+  geom_point(aes(colour = course),
+    size=5, shape=19, alpha=.3, stroke = 1,
+             position=position_jitter(width=1, height=1))+
+  geom_smooth(se = FALSE,
+              method = "lm")+
+  ylim(0,100)+
+  theme_custom
+
+scatterMuggles<-hogwarts |> 
+  mutate(course = as.factor(course)) |> 
+  ggplot(aes(x = `result`, 
+                 y = `Muggle studies exam`))+
+  geom_point(aes(colour = course),
+             size=5, shape=19, alpha=.3, stroke = 1,
+             position=position_jitter(width=1, height=1))+
+  geom_smooth(se = FALSE,
+              method = "lm")+
+  ylim(0,100)+
+  theme_custom
+
+scatterDivinations<-hogwarts |> 
+  mutate(course = as.factor(course)) |> 
+  ggplot(aes(x = `result`, 
+                 y = `Divinations exam`))+
+  geom_point(aes(colour = course),
+             size=5, shape=19, alpha=.3, stroke = 1,
+             position=position_jitter(width=1, height=1))+
+  geom_smooth(se = FALSE,
+              method = "lm")+
+  ylim(0,100)+
+  theme_custom
+
+
+scatterPotions<-hogwarts |> 
+  mutate(course = as.factor(course)) |> 
+  ggplot(aes(x = `result`, 
+                 y = `Potions exam`))+
+  geom_point(aes(colour = course),
+             size=5, shape=19, alpha=.3, stroke = 1,
+             position=position_jitter(width=1, height=1))+
+  geom_smooth(se = FALSE,
+              method = "lm")+
+  ylim(0,100)+
+  theme_custom
+
+ggarrange(plotlist = list(scatterHerbology, scatterMuggles,
+                          scatterDivinations,scatterPotions),
+          ncol = 2, 
+          nrow = 2,
+         widths = c(1, 1))
+
+
+```
+
+3.  **Видоизмените график, полученный на предыдущем шаге. Сгруппируйте и покрасьте линии тренда в соответствии с одной из категориальных переменных (с такой, которая подсвечивает одно из наблюдений на предыдущем этапе, относящееся ко всем 4-м экзаменам). Постарайтесь избежать коллизий в легенде, при этом сохранив и цветовую палитру для раскраски точек по факультетам. (1 б.)**
+
+```{r}
+scatterHerbology<-hogwarts |> 
+  mutate(course = as.factor(course)) |> 
+  mutate(sex = as.factor(sex)) |> 
+ ggplot(aes(x = `result`, 
+                 y = `Herbology exam`))+
+  geom_point(aes(colour = course),
+    size=5, shape=19, alpha=.3, stroke = 1,
+             position=position_jitter(width=1, height=1))+
+  ggnewscale::new_scale_colour()+
+  geom_smooth(aes(colour = sex),
+              se = FALSE,
+              method = "lm")+
+  ylim(0,100)+
+  scale_colour_manual("sex", values = c("red", "blue"))+
+  theme_custom
+
+scatterMuggles<-hogwarts |> 
+  mutate(course = as.factor(course)) |> 
+  ggplot(aes(x = `result`, 
+                 y = `Muggle studies exam`))+
+  geom_point(aes(colour = course),
+             size=5, shape=19, alpha=.3, stroke = 1,
+             position=position_jitter(width=1, height=1))+
+  ggnewscale::new_scale_colour()+
+  geom_smooth(aes(colour = sex),
+              se = FALSE,
+              method = "lm")+
+  ylim(0,100)+
+  scale_colour_manual("sex", values = c("red", "blue"))+
+  theme_custom
+
+scatterDivinations<-hogwarts |> 
+  mutate(course = as.factor(course)) |> 
+  ggplot(aes(x = `result`, 
+                 y = `Divinations exam`))+
+  geom_point(aes(colour = course),
+             size=5, shape=19, alpha=.3, stroke = 1,
+             position=position_jitter(width=1, height=1))+
+  ggnewscale::new_scale_colour()+
+  geom_smooth(aes(colour = sex),
+              se = FALSE,
+              method = "lm")+
+  ylim(0,100)+
+  scale_colour_manual("sex", values = c("red", "blue"))+
+  theme_custom
+
+
+scatterPotions<-hogwarts |> 
+  mutate(course = as.factor(course)) |> 
+  ggplot(aes(x = `result`, 
+                 y = `Potions exam`))+
+  geom_point(aes(colour = course),
+             size=5, shape=19, alpha=.3, stroke = 1,
+             position=position_jitter(width=1, height=1))+
+  ggnewscale::new_scale_colour()+
+  geom_smooth(aes(colour = sex),
+              se = FALSE,
+              method = "lm")+
+  ylim(0,100)+
+  scale_colour_manual("sex", values = c("red", "blue"))+
+  theme_custom
+
+ggarrange(plotlist = list(scatterHerbology, scatterMuggles,
+                          scatterDivinations,scatterPotions),
+          ncol = 2, 
+          nrow = 2,
+         widths = c(1, 1))
+```
+
+## geom_col и вещи вокруг него
+
+### 1. Постройте барплот (столбиковую диаграмму) распределения набранных баллов за первый семестр (с 1-й по 17-ю неделю включительно) у студентов разного происхождения. Если у вас возникают трудности, можете обратиться к шпаргалке по dplyr от posit. Выдвиньте гипотезу (или гипотезы), почему распределение получилось именно таким. (1 б.)
+
+***Гипотеза:*** *По всей видимости, распределение баллов напрямую связано с количеством учеников разного происхождения. Возможно также, что полукровки лучше стараются, чем чистокровные. А к маглорожденным могут предвзято относиться.*
+
+```{r}
+# Создаем новый мини-датафрейм
+
+
+bloodStatusfirst<- hogwarts |> 
+  mutate(bloodStatus = as.factor(bloodStatus)) |>
+  mutate(first=rowSums(across(week_1:week_17)))|> 
+  group_by(bloodStatus)  |>
+  summarise(bloodStatusTotalPoints = sum(first))
+
+ ggplot(bloodStatusfirst)+
+  geom_col(aes(x = bloodStatus, 
+               y = bloodStatusTotalPoints,
+               fill = bloodStatus))+
+  theme_custom
+
+```
+
+### 2. Постройте барплот Модифицируйте предыдущий график -- отсортируйте столбцы в порядке убывания суммы баллов. Добавьте на график текстовые метки, отражающие число студентов каждого происхождения. Попробуйте использовать для этой задачи не geom_text, а geom_label. Настройте внешний вид geom_label по своему усмотрению. Поправьте название оси. Проинтерпретируйте график. Соотносится ли интерпретация с вашей гипотезой из пункта 1? (1 б.)
+
+***Интерпретация графика:** Распределение баллов действительно соотносится с кол-вом учеников разного происхождения.*
+
+```{r}
+bloodStatusfirst<- hogwarts |> 
+  mutate(bloodStatus = as.factor(bloodStatus)) |>
+  mutate(first=rowSums(across(week_1:week_17)))|> 
+  group_by(bloodStatus)  |>
+  summarise(bloodStatusTotalPoints = sum(first))
+
+bloodStatusCount<- hogwarts |>
+   mutate(bs=as.factor(bloodStatus))|>
+   group_by(bs)  |>
+    summarise(count = n())
+
+bloodStatusAll<-bloodStatusfirst |>
+  bind_cols(bloodStatusCount) |>
+  group_by(bloodStatus, bs)
+
+ ggplot(bloodStatusAll)+
+  geom_col(aes( x = fct_reorder(bloodStatus, bloodStatusTotalPoints, .desc=T),
+               y = bloodStatusTotalPoints,
+               fill = bloodStatus))+
+ geom_label(aes(x=fct_reorder(bloodStatus, bloodStatusTotalPoints, .desc=T),
+                y=bloodStatusTotalPoints,
+               label=paste0 (count)),
+              colour = "black",
+            size = 8,
+            hjust = .5)+
+   labs(x= "Происхождение", y= "Баллы за первый семестр")+
+  theme_custom
+```
+
+### 3.И снова измените график -- добавьте на него разбивку не только по происхождению, но и по полу. Раскрасьте столбцы по происхождению. Сделайте подписи к столбцам читаемыми. Дайте графику название, измените, если требуется, название осей. Сделайте шаг для оси, на которой отображены очки, через каждую тысячу баллов. Разместите текстовые метки по правому краю графика. Настройте график таким образом, чтобы метки были видны целиком и не обрезались. Сохраните график на устройство.(1.5 б.)
+
+```{r}
+bloodstatusSex<-hogwarts |> 
+  mutate(first=rowSums(across(week_1:week_17)))|>
+  group_by(bloodStatus, sex) |>
+  summarise(bloodStatusTotalPoints = sum(first))|> 
+  mutate(`bloodstatus and sex` = paste0(bloodStatus, " & ", sex))
+
+bloodStatusCount<- hogwarts |>
+   mutate(bs=as.factor(bloodStatus))|>
+   mutate(sx=as.factor(sex))|>
+   group_by(bs, sx)  |>
+    summarise(count = n())|> 
+  mutate(`bloodstatus and sex2` = paste0(bs, " & ", sx))
+
+bloodStatusAll<-bloodstatusSex |>
+  bind_cols(bloodStatusCount) |>
+  group_by(bs,sx)
+
+
+ BloodAndSexPlot<-ggplot(bloodStatusAll)+
+  geom_col(aes( y = fct_reorder(`bloodstatus and sex`, bloodStatusTotalPoints, .desc=F),
+               x = bloodStatusTotalPoints,
+               fill = bloodStatus))+
+ geom_label(aes(y=fct_reorder(`bloodstatus and sex`, bloodStatusTotalPoints, .desc=F),
+                x=bloodStatusTotalPoints,
+               label=paste0 (count)),
+              colour = "black",
+            size = 8,
+            hjust = .5)+
+   labs(x= "Blood Status", y= "Total Points")+
+  labs(title = "Распределение баллов за первый семестр \nв зависимости от происхождения и пола",
+       subtitle = "Учебный год 2023/2024",
+       caption = "Данные предоставлены Институтом биоинформатики",
+       x = "Баллы",
+       y = "Происхождение и пол",
+       fill = "Происхождение")+
+  scale_fill_manual(labels = c("half-blood" = "Полукровка", 
+                             "muggle-born" = "Маглорожденный", 
+                             "pure-blood" = "Чистокровный"),
+                    values = c("half-blood" = "#C50000", 
+                             "muggle-born" = "#ECB939", 
+                             "pure-blood" = "#41A6D9")
+                    )+
+   scale_x_continuous(breaks = seq(0,8000,l=9))+
+  theme_custom
+ 
+  BloodAndSexPlot
+ 
+ # Сохраним график
+ggsave("bloodAndsexSumPoints.png", BloodAndSexPlot, width = 20, height = 15, dpi = 300, units = "in")
+```
+
+### 4.Изучите функцию coord_flip() . Как вы думаете, когда она может быть полезна? Как вы думаете, в чем ее плюсы и минусы? (дополнительные 0.5 б.)
+
+*Функция меняет координаты x и y, а также подписи к ним. "Переворачивает" график на 90 градусов. Полезно для быстрого поворота графика. Плюсы - быстро. Минусы - надписи могут заезжать друг на друга, требуется дальнейшее форматирование*
+
+```{r}
+  BloodAndSexPlot+coord_flip()
+```
+
+## Разное
+
+### 1.Сравните распределение баллов за экзамен по зельеварению и за экзамен по древним рунам. Сделайте это тремя разными способами. Под разными способами понимаются идеологически разные геомы или способы группировки. Не считаются разными способами изменения константных визуальных параметров (цвет заливки, размер фигур) на сходных в остальном графиках. Объедините графики, таким образом, чтобы результирующий график имел два столбца и 2 строки. Два графика должны находиться в верхней строке и занимать равную площадь. Третий график должен занимать нижнюю строку целиком. (2 б).
+
+```{r}
+houseSumRunes <- hogwarts |> 
+  group_by(house) |> 
+  summarise(RunesTotalPoints = sum(`Study of ancient runes exam`))|>
+  mutate (h1=house)
+
+
+houseSumPotions <- hogwarts |> 
+  group_by(house) |> 
+  summarise(PotionsTotalPoints = sum(`Potions exam`))
+
+All<-houseSumRunes |>
+  bind_cols(houseSumPotions) |>
+  group_by(h1)|>
+  mutate(`house...4`=NULL)|>
+  mutate(`house...1`=NULL)
+
+All1<-All |>
+  pivot_longer(!h1)
+
+Barplot<- ggplot(All1)+
+  geom_col(aes( x = fct_reorder(h1, value, .desc=T),
+               y = value,
+               fill = name), position = "dodge")+
+  labs(
+       x = "Факультет",
+       y = "Баллы",
+       fill = "Экзамен")+
+  scale_fill_manual(labels = c("RunesTotalPoints" = "Руны", 
+                             "PotionsTotalPoints" = "Зельеварение" 
+                             ),
+                    values = c("RunesTotalPoints" = "#C50000", 
+                             "PotionsTotalPoints" = "#ECB939" 
+                            )
+                    )+
+
+  theme_custom
+ 
+ #########################################
+pieRunesPlot <- ggplot(All)+
+  geom_col(aes(x = "",
+               y = RunesTotalPoints, 
+               fill = h1))+
+  coord_polar(theta = "y")+
+  labs(x="", y="Баллы по Рунам", fill="Факультет")+
+ scale_fill_manual(labels = c("Gryffindor" = "Гриффиндор", 
+                             "Hufflepuff" = "Пуффендуй", 
+                             "Ravenclaw" = "Когтевран", 
+                             "Slytherin" = "Слизерин"),
+                    values = c("Gryffindor" = "#C50000", 
+                             "Hufflepuff" = "#ECB939", 
+                             "Ravenclaw" = "#41A6D9", 
+                             "Slytherin" = "#1F5D25"))+
+  theme_custom
+ 
+ 
+ 
+ piePotionsPlot <- ggplot(All)+
+  geom_col(aes(x = "",
+               y = PotionsTotalPoints, 
+               fill = h1))+
+  coord_polar(theta = "y")+
+  labs(x="", y="Баллы по Зельеварению", fill="Факультет")+
+ scale_fill_manual(labels = c("Gryffindor" = "Гриффиндор", 
+                             "Hufflepuff" = "Пуффендуй", 
+                             "Ravenclaw" = "Когтевран", 
+                             "Slytherin" = "Слизерин"),
+                    values = c("Gryffindor" = "#C50000", 
+                             "Hufflepuff" = "#ECB939", 
+                             "Ravenclaw" = "#41A6D9", 
+                             "Slytherin" = "#1F5D25"))+
+  theme_custom
+
+####################################
+
+ first_row <- ggarrange(pieRunesPlot,piePotionsPlot, ncol=2,nrow=1)
+
+ggarrange(first_row, Barplot, ncol=1,nrow=2)
+ 
+```
+
+### 2.Визуализируйте средний балл по зельеварению студентов с различным происхождением. Вы вольны добавить дополнительные детали и информацию на график. Проинтерпретируйте результат. Как вы думаете, почему он именно такой? Если у вас есть гипотеза, проиллюстрируйте ее еще одним графиком (или графиками). Объедините их при помощи ggarrange. (по 1 б. за первый и график и правильную интерпретацию с подтверждением в виде второго графика и текстовой аргументации). Измените порядок ваших фигур на первом графике слева направо следующим образом: маглорожденные,, чистокровные, полукровки. Скорректируйте название оси. Если у вас возникают сложности, обратитесь к шпаргалке по пакету forcats от posit. (Дополнительные 0.5 б.)
+
+*Поскольку средние значения (примерно 50) и разброс примерно одинаковый, возможно одинаковы и распределения баллов по зельеварению у учеников каждого происхождения. Проверим geom_hist и geom_violin. Это действительно так.*
+
+```{r}
+housePotionsExam <- hogwarts |> 
+  group_by(bloodStatus) |> 
+  summarise(meanPotionsExam = mean(`Potions exam`) |> round(2),
+            ci95Min = (min(`Potions exam`) |> round(2)),
+            ci95Max = (max(`Potions exam`) |> round(2)))
+
+zero<-ggplot(housePotionsExam, aes(x = bloodStatus, 
+               y = meanPotionsExam))+
+  geom_pointrange(aes(ymin = ci95Min,
+                      ymax = ci95Max, 
+                    colour = bloodStatus, fill=bloodStatus
+                    ),
+                linewidth = 2,
+                fatten = 7, shape=21, size=2)+
+  theme_custom
+
+ 
+ ###########################
+ one<-ggplot(bloodStatusPotionsCount)+
+  geom_histogram(aes(x = `Potions exam`,
+                ),
+                 colour="black",
+                 bins=40)+
+  facet_grid(bloodStatus~.)+
+  theme_bw()+
+  theme(plot.title = element_text(size = 50),
+    axis.text=element_text(size=20),
+    axis.title=element_text(size=25),
+    legend.text=element_text(size=50),
+    legend.title=element_text(size=50)
+  )+
+  theme_custom
+ ###################################
+two<-hogwarts |> 
+  select(id,`Potions exam`, bloodStatus) |> 
+  ggplot()+
+  geom_violin(aes(x= bloodStatus, y=`Potions exam`, fill=bloodStatus))+
+  
+ theme(plot.title = element_text(size = 30),
+    axis.text=element_text(size=20),
+    axis.title=element_text(size=25),
+    legend.text=element_text(size=20),
+    legend.title=element_text(size=20),
+    panel.background = element_rect(fill = "white", colour = "black",
+                                linetype = "solid"),
+    panel.grid.major = element_line(size = 0.5, linetype = 'solid',
+                                colour = "grey"),
+  )+
+  ylim(0, 100)+
+  theme_custom
+################################
+
+ first_row <- ggarrange(zero,two, ncol=2,nrow=1)
+
+ggarrange(first_row, one, ncol=1,nrow=2)
+
+
+
+```
