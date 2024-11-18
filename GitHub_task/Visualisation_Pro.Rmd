@@ -1,0 +1,384 @@
+---
+title: "Visualisation_Pro"
+author: "IsaevaA.S."
+date: "2024-11-17"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+
+library(tidyverse)
+library(readxl)
+library(ggpubr)
+library(qqplotr)
+library(psych)
+library(ggcorrplot)
+library(broom)
+library(reshape)
+library(rstatix)
+library(corrr)
+library(corrplot)
+library(cluster)
+library(factoextra)
+library(pheatmap)
+library(FactoMineR)
+library(ggbiplot)
+library(plotly)
+library(tidymodels)
+library(embed)
+library(tidymodels)
+library(Matrix)
+library(irlba)
+
+```
+
+# Чтение данных
+1. Загрузите датасет very_low_birthweight.RDS (лежит в папке домашнего задания). 
+Переменными исхода являются колонки 'dead', а также время от рождения до смерти или выписки (выводятся из 'birth' и 'exit'. 7 пациентов были выписаны до рождения). Сделайте копию датасета, в которой удалите колонки с количеством пропусков больше 100, а затем удалите все строки с пропусками. 
+
+```{r}
+original_data<-readRDS("C:/Users/User/Downloads/very_low_birthweight.RDS") 
+
+original_data
+
+cleaned_data<-original_data %>% 
+  select_if(~ sum(is.na(.)) < 100) %>% #удаляем колонки с количеством пропусков больше 100
+  drop_na() #удаляем строки с NA
+
+```
+
+# Плотности распределения числовых данных
+2. Постройте графики плотности распределения для числовых переменных. Удалите выбросы, если таковые имеются. Преобразуйте категориальные переменные в факторы. Для любых двух числовых переменных раскрасьте график по переменной ‘inout’.
+
+
+```{r}
+
+cleaned_data<-cleaned_data %>% 
+  mutate(race=as.factor(race),
+         inout=as.factor(inout),
+         twn=as.factor(twn),
+         delivery=as.factor(delivery),
+         sex=as.factor(sex),
+         dead=as.factor(dead),
+         vent=as.factor(vent),
+         pneumo=as.factor(pneumo),
+         pda=as.factor(pda),
+         cld=as.factor(cld))
+
+
+cleaned_data_num<-cleaned_data %>% 
+  select_if(is.numeric) %>% 
+  gather(key="variable", value="value")
+
+
+
+
+density_plots<-ggplot(cleaned_data_num, aes(value)) +
+  geom_density() +
+  facet_wrap(~variable, scales="free")+
+  theme_classic()
+
+  
+bwt_plot<-ggplot(cleaned_data, aes(bwt, fill=inout)) +
+  geom_density(alpha = .5)+
+  theme_classic()
+
+lowph_plot<-ggplot(cleaned_data, aes(lowph, fill=inout)) +
+  geom_density(alpha = .5)+
+  theme_classic()
+
+density_plots
+bwt_plot
+lowph_plot
+
+```
+Удаляем выбросы благодаря боксплоту
+
+```{r}
+
+cleaned_data_outliers<-cleaned_data %>%
+  mutate_if(is.numeric, ~replace(., . %in% boxplot.stats(.)$out,NA)) %>% 
+  drop_na
+
+cleaned_data_outliers_num<-cleaned_data_outliers %>% 
+  select_if(is.numeric) %>% 
+  gather(key="variable", value="value")
+
+
+density_plots_out<-ggplot(cleaned_data_outliers_num, aes(value)) +
+  geom_density() +
+  facet_wrap(~variable, scales="free")+
+  theme_classic()
+
+density_plots_out
+
+```
+# Сравнение числовой переменной по группам
+3. Проведите тест на сравнение значений колонки ‘lowph’ между группами в переменной inout. Вид статистического теста определите самостоятельно. Визуализируйте результат через библиотеку 'rstatix'. Как бы вы интерпретировали результат, если бы знали, что более низкое значение lowph ассоциировано с более низкой выживаемостью?
+
+```{r}
+
+
+stats<-cleaned_data_outliers %>%
+  select(lowph, inout) %>% 
+  group_by(inout) %>%
+  get_summary_stats(lowph, type = "mean_ci")
+
+
+
+IN<-c(stats$inout[1], stats$inout[2])
+M<-c(stats$mean[1], stats$mean[2])
+CI<-c(stats$ci[1], stats$ci[2])
+
+tib<-tibble(IN,M, CI) %>% mutate(M=as.numeric(M),
+                                 CI=as.numeric(CI))
+
+ggplot(tib, 
+       aes(x = IN, 
+           y = M)) +
+  geom_point()+
+  geom_errorbar(aes(ymin=M-CI,
+                    ymax=M+CI))+
+  ylim(7.1,7.3)+
+  theme_minimal()
+
+
+cleaned_data_outliers %>%
+  t_test(lowph ~ inout)%>%
+  add_significance()
+
+
+
+```
+Вывод: Тест Стьюдента показал статистически значимое отличие в средних (с ош. первого рода = 0,05) между группами. 95% ДИ-лы не пересекаются. В группе transported более низкое значение lowph, и, принимая во внимание взаимосвязь с выживаемостью, по всей видимости, будет более низкая выживаемость.
+
+# Корреляционный анализ
+
+4. Сделайте новый датафрейм, в котором оставьте только континуальные или ранговые данные, кроме 'birth', 'year' и 'exit'. Сделайте корреляционный анализ этих данных. Постройте два любых типа графиков для визуализации корреляций.
+
+```{r}
+
+cleaned_data_outliers_contin <-cleaned_data_outliers %>% 
+  select_if(is.numeric) %>% 
+  select(-c('birth', 'year', 'exit') )
+
+
+
+
+
+cleaned_data_outliers_contin_cor <- cor(cleaned_data_outliers_contin, method = "spearman") 
+
+corrplot(cleaned_data_outliers_contin_cor, method = 'number')
+
+cleaned_data_outliers_contin_cor %>% network_plot(min_cor = .0)
+
+
+
+```
+Визуализируем самые сильные корреляции между данными:
+
+gest - bwt
+
+bwt - hospstay
+
+gest - hospstay
+
+```{r}
+gest_bwt<-cleaned_data_outliers_contin %>% 
+    ggplot(aes(x = gest, y = bwt)) + 
+    geom_point(size = 1.1)  + 
+    
+    geom_smooth(method = "lm") +
+    theme_bw()
+
+
+bwt_hospstay<-cleaned_data_outliers_contin %>% 
+    ggplot(aes(x = bwt, y = hospstay)) + 
+    geom_point(size = 1.1)  + 
+    
+    geom_smooth(method = "lm") +
+    theme_bw()
+
+gest_hospstay<-cleaned_data_outliers_contin %>% 
+    ggplot(aes(x = gest, y = hospstay)) + 
+    geom_point(size = 1.1)  + 
+    
+    geom_smooth(method = "lm") +
+    theme_bw()
+
+
+
+ct_gest_bwt<-cor.test(cleaned_data_outliers_contin$gest,
+         cleaned_data_outliers_contin$bwt, method = "spearman")
+
+
+ct_bwt_hospstay<-cor.test(cleaned_data_outliers_contin$bwt,
+         cleaned_data_outliers_contin$hospstay, method = "spearman")
+
+ct_gest_hospstay<-cor.test(cleaned_data_outliers_contin$gest,
+         cleaned_data_outliers_contin$hospstay, method = "spearman")
+
+
+ct_gest_bwt
+gest_bwt
+ct_bwt_hospstay
+bwt_hospstay
+ct_gest_hospstay
+gest_hospstay
+```
+Корреляции действительно статистически значимые, однако корреляция между gest и bwt оказалась самой сильной. Остальные показывают отрицательную взаимосвязь.
+
+# Иерархическая кластеризация
+5. Постройте иерархическую кластеризацию на этом датафрейме.
+На основе дендрограммы предполагаю 3 кластера "высшего" уровня
+```{r}
+#Стандартизуем данные
+cleaned_data_outliers_contin_scaled <- scale(cleaned_data_outliers_contin)
+
+#Матрица дистанций
+data_dist <- dist(cleaned_data_outliers_contin_scaled,
+                       method = "euclidean")
+#Дендрограмма кластеров
+data_dist.hc <- hclust(d = data_dist,
+                     method = "ward.D2")
+
+#Визуализируем
+tree<-fviz_dend(data_dist.hc, 
+          k=3,
+          cex = 0.6, 
+          horiz = TRUE,
+          k_colors = "jco",
+          rect = TRUE, 
+          rect_border = "jco", 
+          rect_fill = TRUE) 
+
+tree
+
+``` 
+6. Сделайте одновременный график heatmap и иерархической кластеризации. Интерпретируйте результат.
+
+Здесь видно, что bwt и gest расположены ближе всего друг к другу (корреляционный анализ показал нам бОльшую корреляцию). Разделение данных на 6 кластеров (по рядам), видимо, оптимально (хотя по некоторым колонкам все равно собираются в кластер и "синие" и "красные" значения). Вид данных схож у двух соседних веток. Переменная hospstay сильно отличается от других.
+
+```{r}
+
+
+
+
+heat_tree<-pheatmap(cleaned_data_outliers_contin_scaled, 
+         show_rownames = FALSE, 
+         clustering_distance_rows = data_dist,
+         clustering_method = "ward.D2", 
+         cutree_rows = 6,
+         cutree_cols = length(colnames(cleaned_data_outliers_contin_scaled)),
+         angle_col = 45, 
+         main = "Dendrograms for clustering rows and columns with heatmap")
+heat_tree
+
+```
+
+# PCA анализ
+7. Проведите PCA анализ на этих данных. Проинтерпретируйте результат. Нужно ли применять шкалирование для этих данных перед проведением PCA?
+
+Шкалирование перед PCA нужно (если не сделали его заранее). 90% дисперсии объясняют первые 5 компонент, а первые 2 компоненты объясняют 60% дисперсии. Это хороший результат разложения на главные компоненты.
+
+```{r}
+cleaned_data_outliers_contin.pca <- prcomp(cleaned_data_outliers_contin, 
+                        scale = T)
+
+summary(cleaned_data_outliers_contin.pca)
+
+
+fviz_eig(cleaned_data_outliers_contin.pca, addlabels = T, ylim = c(0, 50))
+
+
+fviz_pca_var(cleaned_data_outliers_contin.pca, col.var = "contrib")
+
+
+fviz_pca_var(cleaned_data_outliers_contin.pca, 
+             select.var = list(contrib = 3), # Задаём число здесь 
+             col.var = "contrib")
+```
+
+Как и ожидалось, переменные bwt и gest схожи. Их контрибуция в первую главную компоненту высока. Аналогично, коррелируют данные lowp и apg1. Наблюдается отрицательная корреляция между hospstay и gest. Между переменными gest и pltct взаимосвязи нет (как и между apg1 и hospstay). 3 самые важные по контрибуции переменные: gest, bwt, pltct 
+
+# Анализ наблюдений по PCA
+8. Постройте biplot график для PCA. Раскрасьте его по значению колонки 'dead'.
+
+```{r}
+cleaned_data_outliers_contin_death<-cleaned_data_outliers_contin %>% 
+  bind_cols(cleaned_data_outliers$dead)
+
+cleaned_data_outliers_contin_death<-cleaned_data_outliers_contin_death %>% 
+  mutate (death=cleaned_data_outliers_contin_death$...7) %>% 
+  select(-7) 
+  
+#cleaned_data_outliers_contin_death<- cleaned_data_outliers_contin_death %>% mutate(death=as.numeric(death))
+
+
+# Визуализируем с группировкой по death (для этого переменную нужно сделать фактором)
+ggbiplot(cleaned_data_outliers_contin.pca, 
+         scale=0, 
+         groups = as.factor(cleaned_data_outliers_contin_death$death), 
+         ellipse = T,
+         alpha = 0.2) +
+  theme_minimal()
+
+```
+
+9. Переведите последний график в 'plotly'. При наведении на точку нужно, чтобы отображалось id пациента.
+ 
+```{r}
+#Введем id
+cleaned_data_outliers_contin_id<-cleaned_data_outliers_contin %>% 
+  mutate(id=row_number())
+
+cleaned_data_outliers_contin_id.pca<-prcomp(cleaned_data_outliers_contin_id, 
+                        scale = T)
+cleaned_data_outliers_contin_id.pca
+
+pcadf <- data.frame(cleaned_data_outliers_contin_id.pca$x)
+
+#Рисуем график 'plotly' распределения данных по 3 компонентам. (не смогла построить "стрелочки")
+plly<- plot_ly(data = pcadf, 
+            x=~PC1, 
+            y=~PC2,
+          z=~PC3, 
+            size = 1,
+            type="scatter3d",
+            mode="markers",
+         text=row_number(pcadf))
+
+plly
+
+```
+# Интерпретация данных
+10. Дайте содержательную интерпретацию PCA анализу. Почему использовать колонку 'dead' для выводов об ассоциации с выживаемостью некорректно?
+
+PCA анализ показывает, какие переменные вносят бОльший вклад в разделение данных по группам dead. Здесь группы по dead слабо соотноятся с bwt, gest и hospstay (слабо соотносятся с переменными с наибольшей контрибуцией в главные компоненты в том числе) . Лучше всего разделение по dead соотносится с lowph  (однако, нам изначально известно, что lowph соотносится с выживаемостью): низкий lowph соотносится с меньшей выживаемостью (большей смертностью - синий эллипс)
+
+
+#UMAP
+11. Приведите ваши данные к размерности в две колонки через UMAP. Сравните результаты отображения точек между алгоритмами PCA и UMAP.
+
+
+Не могу сделать UMAP из-за ошибки:
+Error in `step_umap()`:
+Caused by error in `irlba::irlba()`:
+! функция 'sexp_as_cholmod_sparse' не предусмотрена в пакете 'Matrix'
+Backtrace:
+  1. ... %>% juice()
+ 14. uwot::umap(...)
+ 15. uwot:::uwot(...)
+ 16. uwot:::spectral_init(V, ndim = n_components, verbose = verbose)
+ 17. uwot:::irlba_tsvd_normalized_laplacian_init(A, ndim, verbose = FALSE)
+ 18. uwot:::irlba_spectral_tsvd(L, ndim + 1)
+ 21. irlba::irlba(L, nv = n, nu = 0, maxit = iters)
+
+
+
+
+
+
+
+
