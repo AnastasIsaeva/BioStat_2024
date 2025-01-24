@@ -1,0 +1,381 @@
+---
+title: "Регрессионный анализ"
+author: "Исаева Анастасия"
+output: html_document
+---
+
+```{r setup, include=FALSE, echo=FALSE}
+library(tidyverse)
+library(gtsummary)
+library(modelsummary)
+library(GGally)
+library(broom)
+library(ggfortify)
+library(ggResidpanel)
+library(performance)
+library(lmtest)
+library(sandwich)
+library(emmeans)
+
+knitr::opts_chunk$set(echo = TRUE, warning = FALSE, message = FALSE, error = FALSE)
+```
+
+## 1. Каким образом вы будете оценивать физическую активность респондентов? Есть ли у вас предварительные предположения относительно того, каким образом выбранный вами показатель может быть ассоциирован с гликированным гемоглобином?
+
+Предположительно, низкая физ.активность способствует ожирению, что в свою очередь изменяет гликемию и может привести к изменениям концентрации гликированного гемаглобина в крови. Иными словами, ИМТ (BMI) - медиатор в причинно-следственной связи "Физ.активность –\> Грикированный гемоглобин). Чем ниже физ.активность, тем выше риск ожирения, тем выше уровень гликированного гемоглобина (и выше риск развития сахарного диабета).
+
+Физ. активность также может быть ассоциирована с уровнем гликированного гемоглобина напрямую через биохимические пути: сокращение мышц приводит к перемещению белка-переносчика глюкозы (GLUT-4) к плазматической мембране, что способствует увеличению транспорта и метаболизма глюкозы.
+
+По имеющимся данным физ. активность будет оцениваться по переменным Физической активности (начинаутся с "PA..."). Согласно литературе, взрослым рекомендуется заниматься регулярно не менее 150 мин умеренной физ. активностью или 75 мин интенсивной физ.активностью. В датасете имеются данные по физ.активности: - Интенсивная: PAQ605, PAQ610, PAD615, велосипед(PAQ635, PAQ640, PAD645), PAQ650, PAQ655, PAD660\
+- Умеренная: PAQ620,PAQ625, PAD630, PAQ665, PAQ670, PAD675 - Сидячая активность: PAD680. Ее в анализе не учитываем, тк она не отображает физическую аквтивность
+
+В дальнейшем мы преобразуем эти переменные в одну "PA", которая будет взвешенной суммой: Интенсивная физ.активность + Умеренная физ.активность\*0,5 (мин/неделя). Коэффициент 0,5 появляется из отношения 75мин/150мин - таким образом умеренная физ активность будет иметь меньший вес чем интенсивная.
+
+## 2.Ковариаты для каких показателей вы включите в модель для коррекции эффекта физической активности в отношении гликированного гемоглобина? Каким образом вы будете их оценивать по имеющимся данным?
+
+***• Бонусное задание: для представленного DAG'а укажите роль каждого показателя по отношению к изучаемой ассоциации между физической активностью и гликированным гемоглобином (конфаундеры (в том числе proxy конфаундеры), коллайдеры, медиаторы)***
+
+Ниже представлен DAG и показатели для коррекции модели.
+
+![](images/DAG.jpg)***Примечание*****.** *При деконфаундинге мы не учитываем BMI, тк он является медиатором в причинно-следственной связи X--\>Y. Тк наша задача оценить общий эффект, BMI не учитывается (при оценке прямого эффекта X на Y мы бы учитывали этот медиатор)*
+
+В данной модели учитывается наименьшее необходимое количество переменных для коррекции, чтобы не оверфиттить модель:
+
+-Возраст
+
+-Сопутствующие заболевания
+
+-Раса
+
+-Пол
+
+-Курение
+
+В модели представлены следующие переменные:
+
+1)  Конфаундеры (влияют как на зависимую Y, так и на независимую переменную X. Предок X и Предок Y - по пути который не включает X): Раса, Сопутствующие заболевания, Пол
+
+2)  Proxy конфаундеры (сами по себе не являются конфаундерами, но лежат между конфаундерами и X или Y): Образование, Курение
+
+3)  Коллайдеры (на эти переменные влияют 2 и более переменных. В данном случае ищем коллайдеры по отношению к связи X--\>Y): Кровяное давление
+
+4)  Медиаторы (переменные на пути связи X--\>Y): ИМТ
+
+##3.Проведите необходимый эксплораторный анализ перед оценкой модели.
+
+###Данные
+
+Прочитаем данные и преобразуем некоторые из них в нужный формат. Введем переменную Физ.активности PA (общая физ. активность). Введем категориальную переменную PAC.
+
+PA= Интенсивная физ.активность + Умеренная физ.активность\*0,5 (мин/неделя). Коэффициент 0,5 появляется из отношения 75мин/150мин - таким образом умеренная физ активность будет иметь меньший вес чем интенсивная.
+
+PAC= 2 категории: Normal, если общая физ.активность PA ≥ 150 мин/неделя ИЛИ ; Low, если PA ≤ 150 мин/неделя. 150 мин выбрано как бейзлайн, тк PA представляет собой длительность преобразованной в интенсивную физ. активности.
+
+```{r}
+
+original_data <- readxl::read_xlsx("C:/Users/User/BioStat_2024/GitHub_task/Regression/HW_data.xlsx")
+#glimpse(original_data)
+#summary(original_data)
+
+mutated_data <- original_data %>% 
+  mutate(RIAGENDR=as.factor(RIAGENDR),
+         RIDRETH3= as.factor(RIDRETH3),
+         DMDEDUC2=as.factor(DMDEDUC2),
+         DMDMARTL=as.factor(DMDMARTL),
+         DMDHHSIZ=as.factor(DMDHHSIZ),
+         DMDHHSZA=as.factor(DMDHHSZA),
+         DMDHHSZB=as.factor(DMDHHSZB),
+         DMDHHSZE=as.factor(DMDHHSZE),
+         INDFMIN2=as.factor(INDFMIN2),
+         DRQSDIET=as.factor(DRQSDIET),
+         DRQSDT1=as.factor(DRQSDT1),
+         DRQSDT2=as.factor(DRQSDT2),
+         DRQSDT3=as.factor(DRQSDT3),
+         DRQSDT4=as.factor(DRQSDT4),
+         DRQSDT7=as.factor(DRQSDT7),
+         DRQSDT8=as.factor(DRQSDT8),
+         DRQSDT9=as.factor(DRQSDT9),
+         DRQSDT10=as.factor(DRQSDT10),
+         DRQSDT91=as.factor(DRQSDT91),
+         DRD340=as.factor(DRD340),
+         DRD360=as.factor(DRD360),
+         ALQ101=as.factor(ALQ101),
+         ALQ120U=as.factor(ALQ120U),
+         SMQ020=as.factor(SMQ020),
+         SMQ040=as.factor(SMQ040),
+         
+         PAQ605=as.factor(PAQ605),
+         PAQ620=as.factor(PAQ620),
+         PAQ635=as.factor(PAQ635),
+         PAQ650=as.factor(PAQ650),
+         
+         MCQ010=as.factor(MCQ010),
+         MCQ035=as.factor(MCQ035),
+         MCQ160C=as.factor(MCQ160C),
+         MCQ160B=as.factor(MCQ160B),
+         MCQ160E=as.factor(MCQ160E),
+         MCQ160F=as.factor(MCQ160F),
+         MCQ160M=as.factor(MCQ160M),
+         MCQ170M=as.factor(MCQ170M),
+         MCQ160O=as.factor(MCQ160O),
+         MCQ220=as.factor(MCQ220),
+         BPQ020=as.factor(BPQ020),
+         BPQ050A=as.factor(BPQ050A),
+         DIQ010=as.factor(DIQ010),
+         DIQ070=as.factor(DIQ070),
+         PA=round((PAQ610*PAD615+PAQ640*PAD645+PAQ655*PAD660+0.5*PAQ625*PAD630+0.5*PAQ670*PAD675)/7,2) #формула для PA
+) %>% 
+  mutate(PAC=ifelse(PA==150|PA>150, "Normal", "Low")) %>% 
+  mutate(PAC=as.factor(PAC))
+#glimpse(mutated_data)
+#summary(mutated_data)
+mutated_data %>% head()
+```
+
+### Описательные статистики
+
+Для нашей модели интересны следующие данные:
+
+Воздействие: Физ. активность (PA ИЛИ PAC)
+
+Исход: Гликированный гемаглобин (LBXGH)
+
+Конфаундеры: Возраст (RIDAGEYR), Сопутствующие заболевания (Учитываются заболевания на протяжении жизни: MCQ010-asthma, MCQ160C-coronary heart disease, MCQ160B-congestive heart failure, MCQ160E-heart attack, MCQ160F-stroke, MCQ160M-thyroid problem, MCQ160O-COPD, MCQ220-malignancy, BPQ020-high blood pressure), Раса (RIDRETH3), Пол (RIAGENDR), Курение (SMQ040. Показатель SMQ020 не показателен, если респондент бросил курить)
+
+В некоторых категориальных переменных есть ошибки. Выбросим строки, содержащие их (NA)
+
+```{r}
+mutated_data_var<-mutated_data %>% select(PA, PAC, LBXGH, RIDAGEYR, MCQ010, MCQ160C, MCQ160B, MCQ160E, MCQ160F, MCQ160M, MCQ160O, MCQ220, BPQ020, RIDRETH3, RIAGENDR, SMQ040) %>% 
+  rename_with(function(x) x %>%
+              str_replace("PAC","Physical activity category") %>%  
+              str_replace("PA","Physical activity") %>% 
+              str_replace("LBXGH","Glycohemoglobin (%)") %>% 
+              str_replace("RIDAGEYR","Age")%>% 
+              str_replace("MCQ010","asthma")%>% 
+              str_replace("MCQ160C","coronary heart disease")%>% 
+              str_replace("MCQ160B","congestive heart failure")%>% 
+              str_replace("MCQ160E","heart attack")%>% 
+              str_replace("MCQ160F","stroke")%>% 
+              str_replace("MCQ160M","thyroid problem")%>% 
+              str_replace("MCQ160O","COPD")%>% 
+              str_replace("MCQ220","malignancy")%>% 
+              str_replace("BPQ020","high blood pressure")%>% 
+              str_replace("RIDRETH3","Race")%>% 
+              str_replace("SMQ040","Smoking") %>% 
+              str_replace("RIAGENDR","Sex")) %>% 
+   mutate(across(Sex, function(x) x %>% 
+                  factor(levels=c("1","2"), labels=c("Male", "Female")))) %>% 
+  mutate(across(asthma, function(x) x %>% 
+                  factor(levels=c("1","2"), labels=c("Yes", "No")))) %>% 
+  mutate(across('coronary heart disease', function(x) x %>% 
+                  factor(levels=c("1","2"), labels=c("Yes", "No")))) %>% 
+  mutate(across('congestive heart failure', function(x) x %>% 
+                  factor(levels=c("1","2"), labels=c("Yes", "No")))) %>%
+  mutate(across('heart attack', function(x) x %>% 
+                  factor(levels=c("1","2"), labels=c("Yes", "No")))) %>%
+  mutate(across('stroke', function(x) x %>% 
+                  factor(levels=c("1","2"), labels=c("Yes", "No")))) %>%
+  mutate(across('thyroid problem', function(x) x %>% 
+                  factor(levels=c("1","2"), labels=c("Yes", "No")))) %>%
+  mutate(across('COPD', function(x) x %>% 
+                  factor(levels=c("1","2"), labels=c("Yes", "No")))) %>%
+  mutate(across('malignancy', function(x) x %>% 
+                  factor(levels=c("1","2"), labels=c("Yes", "No")))) %>%
+  mutate(across('high blood pressure', function(x) x %>% 
+                  factor(levels=c("1","2"), labels=c("Yes", "No")))) %>%
+   mutate(across('Race', function(x) x %>% 
+                  factor(levels=c("1","2","3","4", "6","7"), labels=c("Mexican American", "Other Hispanic", "Non-Hispanic White", "Non-Hispanic Black", "Non-Hispanic Asian", "Other Race - Including Multi-Racial")))) %>%
+    mutate(across('Smoking', function(x) x %>% 
+                  factor(levels=c("1","2","3"), labels=c("Every day", "Some days", "Not at all")))) %>% 
+    drop_na() 
+
+tbl_summary(
+  mutated_data_var, 
+  type = list(all_continuous() ~ "continuous2"),
+  statistic = list(
+    all_continuous() ~ c("{mean} ({sd})", "{median} ({p25}-{p75})", "{min}-{max}")
+  )) %>%
+  modify_footnote(everything() ~ NA) %>%
+  bold_labels()
+
+
+#summary(mutated_data_var)
+```
+
+####Графики Объединим все сопутствующие заболевания в одну переменную, которая покажет наличие или отсутствие таких заболеваний (asthma, `coronary heart disease`, `congestive heart failure`, `heart attack`, `stroke`,`thyroid problem`, COPD, malignancy, `high blood pressure`). Данное преобразование делаем для упрощения последующего графика.
+
+```{r}
+mutated_data_var_com<-mutated_data_var %>% 
+  mutate(comorbidities=ifelse(asthma=="yes"| `coronary heart disease`=="yes"| `congestive heart failure`=="yes"| `heart attack`=="yes"| stroke=="yes"| `thyroid problem`=="yes"| COPD=="yes"| malignancy=="yes"| `high blood pressure`=="Yes","Yes","No")) %>% 
+  mutate(comorbidities=as.factor(comorbidities))
+
+#summary(mutated_data_var_com)
+
+```
+
+Построим общий описательный график
+
+```{r, fig.width=15, fig.height=15}
+
+ggpairs(
+  mutated_data_var_com %>% dplyr::select(`Physical activity`, `Physical activity category`, `Glycohemoglobin (%)`, Age, Race, Sex, Smoking, comorbidities ), 
+  upper = list(continuous = wrap("points", alpha = 0.5, size = 1),
+               combo = wrap("points", alpha = 0.5, size = 1),
+               disrete = "blank"),
+  lower = list(continuous = "cor",
+               discrete = "count",
+               combo = wrap("box_no_facet", outlier.size = 0.5)),
+  diag = list(continuous = "barDiag",
+              discrete = "barDiag"),
+  showStrips = TRUE, progress = FALSE) +
+  theme_bw(base_size = 12) +
+  theme(axis.text.x = element_text(angle = 90, hjust = 1),
+        panel.grid.minor = element_blank(),
+        strip.placement = "outside",
+        strip.background = element_rect(color = "white", fill = "#EFEBE9"),
+        strip.text = element_text(size = 10, face = "bold"))
+```
+
+По графикам видно, что распределение Физ.активности и гликированного гемоглобина скошено в область низких значений. Статистически значимой корреляции между Физ. активностью и гликированным гемоглобином нет, значит можно предположить отсутствие линейной зависимости. Следовательно, либо зависимость нелинейна, либо ковариаты искажают зависимость, либо зависимости нет вовсе (вариант с малым количеством наблюдений в выборке исключаем). Оценивать данную зависимость будем линейной регрессией. В целом, можно разделить Физ. активность на группы (нормальная/ниже нормы), но при переводе количественной переменной в категориальную теряется информация. Есть статистически значимые корреляции между Физ.активностью и возрастом (отрицательная), а также между уровнем Гликированного гемоглобина и возрастом. Возможно, в дальнейшем придется исключить Age из модели (заменить ее другими конфаундерами) - это покажет анализ VIF.
+
+```{r}
+
+ggplot(mutated_data_var_com, aes(x=`Physical activity`, y=`Glycohemoglobin (%)`)) + 
+     geom_point(size = 2, alpha=0.1) +
+     theme_bw() +
+     geom_smooth(method = "lm", formula = y ~ x, se = T,
+                 colour = 'black',size=1) 
+```
+
+## 4. Оцените модель для зависимости гликированного гемоглобина от выбранного вами показателя физической активности без ковариат и с ними. Проведите необходимую диагностику этих моделей -- требует ли что-либо коррекции и почему? В случае необходимости коррекции по результатам диагностики сделайте ее.
+
+Модель зависисмости Уровня Гликированного гемоглобина от времени Физ. активности в неделю без ковариат:
+
+```{r, fig.width=10, fig.height=7}
+mutated_data_var_fit <- lm(`Glycohemoglobin (%)` ~ `Physical activity`, mutated_data_var)
+#print(mutated_data_var_fit)
+#summary(mutated_data_var_fit)
+broom::tidy(mutated_data_var_fit, conf.int = TRUE)
+
+
+par(mfrow = c(2, 2))
+plot(mutated_data_var_fit)
+#autoplot(mutated_data_var_fit)
+#2*(1+1)/913
+```
+
+1)  Residuals vs Fitted. Остатки VS подобранные значения. Красная линия горизонтальна в 0, однако остатки не распределены равномерно по fitted values. Линейность зависимости Y от X под вопросом.
+2)  Scale-Location. Однородности дисперсии. График показывает, равномерно ли распределены остатки по диапазонам предикторов.Хоть красная линия горизонтальна, точки распределены не равномерно. Здесь наблюдается гетероскедастичность ошибок =\> требуется коррекция оценки ошибок или корректировка модели.
+3)  Q-q Residuals. Нормальность распределения остатков. Здесь наблюдается отклонение от нормального распределения остатков, однако это не критично при большой выборке.
+4)  Residuals vs Leverage. На графике представлены экстримальные точки, превышающие 3 - это возможные выбросы. 2(p + 1)/n = 2(1+1)/913=0.004381161. Имеется одно наблюдение с высоким плечом (оказывает большое влияение)
+
+Модель с ковариатами (возрастом, расой, полом, курением и сопутствующими заболеваниями):
+
+```{r, fig.width=10, fig.height=7}
+mutated_data_var_cov_fit <- lm(`Glycohemoglobin (%)` ~ `Physical activity` + Age + Race + Sex + Smoking + asthma + `coronary heart disease`+ `congestive heart failure`+ `heart attack`+ `stroke`+`thyroid problem`+ COPD + malignancy + `high blood pressure`, mutated_data_var)
+#print(mutated_data_var_cov_fit)
+#summary(mutated_data_var_cov_fit)
+broom::tidy(mutated_data_var_cov_fit, conf.int = TRUE)
+
+#autoplot(mutated_data_var_cov_fit)
+par(mfrow = c(2, 2))
+plot(mutated_data_var_cov_fit)
+#2*(1+1)/913
+```
+
+1)  Residuals vs Fitted. Остатки VS подобранные значения. Красная горизонтальная линия подтверждает предположение о линейной связи между предикторами и исходом, остатки в целом распределены равномерно.
+2)  Scale-Location. Однородность дисперсии. График показывает, равномерно ли распределены остатки по диапазонам предикторов.Красная линия не горизонтальна. Здесь наблюдается гетероскедастичность ошибок =\> требуется коррекция оценки ошибок (робастные ст. ошибки) или корректировка модели.
+3)  Q-q Residuals. Нормальность распределения остатков. Здесь наблюдается отклонение от нормального распределения остатков, однако это не критично при большой выборке.
+4)  Residuals vs Leverage. На графике представлены экстримальные точки, превышающие 3 - это возможные выбросы. 2(p + 1)/n = 2(14+1)/913=0.004381161 Имеется множество наблюдений с высоким плечом. Однако эти наблюдения вряд ли являются ошибкой, тк их много. Их не стоит исключать. Их наличие приводит к увеличению RSE (стандартной ошибки регрессии), если они выходят за пунктирные линии расстояний Кука, чего здесь не наблюдается.
+
+Расстояние Кука:
+
+```{r}
+resid_panel(mutated_data_var_cov_fit, plots = c("lev", "cookd"))
+plot(mutated_data_var_cov_fit, 5)
+```
+
+Проверка на мультиколинеарность:
+
+Коэффициенты корреляции Пирсона:
+
+```{r}
+cor(mutated_data_var %>% dplyr::select(`Physical activity`, Age))
+```
+
+VIF не высокий, мультиколинеарность отсутствует
+
+```{r}
+car::vif(lm(`Glycohemoglobin (%)` ~ `Physical activity` + Age, mutated_data_var))
+
+```
+
+## 5. Представьте результаты оценки модели без ковариат и с ковариатами в виде точечной и интервальной оценки эффекта физической активности. Дайте им словесную интерпретацию. Какие выводы мы можем сделать, исходя из точечной оценки? А из интервальной? Как вы думаете, можно ли считать эффект клинически значимым? Если затрудняетесь с ответом, что бы вам помогло дать ответ на этот вопрос?
+
+Точечная оценка эффекта воздействия на исход - константа регрессии и коэффициент регрессии при воздействии. Интервальная заключается в ДИ точечных оценок.
+
+Модель без ковариат (без и с коррекцией на гетероскедастичность):
+
+```{r}
+broom::tidy(mutated_data_var_fit, conf.int = TRUE)
+broom::tidy(coeftest(mutated_data_var_fit, vcov. = vcovHC, type = "HC4"), conf.int = TRUE)
+
+```
+
+Константа регрессии: При отсутствии Физической активности (0 мин в неделю) у респондентов базово уровень гликированного гемоглобина = 5.8% Коэффициент регрессии: При изменении длительности Физ. активности на 1 мин в неделю статистически значимого изменения уровня гликированного гемоглобина нет (ДИ не включает 0, p значение больше 0,05)
+
+Модель с ковариатами (без и с коррекцией на гетероскедастичность):
+
+```{r}
+broom::tidy(mutated_data_var_cov_fit, conf.int = TRUE)
+broom::tidy(coeftest(mutated_data_var_cov_fit, vcov. = vcovHC, type = "HC4"), conf.int = TRUE)
+```
+
+Константа регрессии: При отсутствии Физической активности (0 мин в неделю) у респондентов базово уровень гликированного гемоглобина = 6.7% Коэффициент регрессии: При изменении длительности Физ. активности на 1 мин в неделю и равенстве остальных ковариат статистически значимого изменения уровня гликированного гемоглобина нет (ДИ включает 0, p значение больше 0,05)
+
+Клинически значимого эффекта от увеличения длительности физ.активности на 1 мин в неделю при прочих равных условиях на уровень гликированного гемоглобина нет
+
+Интересно, что и при разделении физ. активности на категории в соответствии с нормой из литературы, статистически значимой зависимости уровня гликированного гемоглобина от категории физ. активности (нома или ниже нормы) нет (модель коррекцией на гетероскедастичность, тк она наблюдается в такой модели тоже):
+
+```{r}
+mutated_data_var_cov_fit2 <- lm(`Glycohemoglobin (%)` ~ `Physical activity category` + Age + Race + Sex + Smoking + asthma + `coronary heart disease`+ `congestive heart failure`+ `heart attack`+ `stroke`+`thyroid problem`+ COPD + malignancy + `high blood pressure`, mutated_data_var)
+
+
+broom::tidy(coeftest(mutated_data_var_cov_fit2, vcov. = vcovHC, type = "HC4"), conf.int = TRUE)
+```
+
+## 6. Проверьте гипотезу об отсутствии ассоциации между физической активностью и гликированным гемоглобином. Сделайте выводы по полученным результатам.\*\*\* Берем модель с ковариатами и оцениваем гипотезу о равенстве 0 коэффициента регрессии у Физ. активности (с поправкой на гетероскедастичность):
+
+```{r}
+
+car::linearHypothesis(mutated_data_var_cov_fit, names(coef(mutated_data_var_cov_fit)[2]),  vcov. = vcovHC, type = "HC4")
+
+
+```
+
+Таким образом, при уровне значимости 0.05 гипотезу об отсутствии ассоциации между физической активностью и гликированным гемоглобином не отвергается. Даже при учете ковариат мы не можем сделать вывод о зависимости уровня гликированного гемоглобина от длительности физ.активности
+
+Также мы не можем отвергнуть гипотезу о том, что ассоциация гликированного гемоглобина с категорией физ.активности (норма/ниже нормы) отсутствует:
+
+```{r}
+car::linearHypothesis(mutated_data_var_cov_fit2, names(coef(mutated_data_var_cov_fit2)[2]),  vcov. = vcovHC, type = "HC4")
+```
+
+### 7. Является ли пол модификатором эффекта физической активности в отношении гликированного гемоглобина? Если да, каков эффект для мужчин и женщин и насколько он отличается между ними?
+
+```{r}
+ggplot() + 
+  geom_point(aes(x=`Physical activity`, y=`Glycohemoglobin (%)`), mutated_data_var_com) + 
+  geom_smooth(aes(x=`Physical activity`, y=`Glycohemoglobin (%)`, color = Sex), mutated_data_var_com, 
+              method = lm, , formula = y ~ x, se = FALSE) +
+  labs(color = element_blank()) +
+  theme_bw()
+```
+
+```{r}
+
+contcont <- lm(`Glycohemoglobin (%)` ~ `Physical activity`*Age + Race + Sex + Smoking + asthma + `coronary heart disease`+ `congestive heart failure`+ `heart attack`+ `stroke`+`thyroid problem`+ COPD + malignancy + `high blood pressure`, mutated_data_var)
+summary(contcont)
+```
+
+Взаимодействие `Physical activity`:Age является незначимым, что свидетельствует о том, что пол не является модификатором эффекта `Physical activity` (однако и эффекта от `Physical activity` на `Glycohemoglobin (%)`ихначально не было)
